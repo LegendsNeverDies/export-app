@@ -1,65 +1,122 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import { Package, List, Settings, FileUp } from "lucide-react";
+import { ImportWorkflow } from "@/components/ImportWorkflow";
+import { OrderList } from "@/components/OrderList";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+type View = "import" | "orders";
 
 export default function Home() {
+  const [view, setView] = useState<View>("import");
+  const [apiKey, setApiKey] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="flex h-screen w-full overflow-hidden">
+      {/* Sidebar */}
+      <aside className="w-56 bg-[#0e4a4a] text-white flex flex-col flex-shrink-0">
+        <div className="h-14 flex items-center px-4 border-b border-[#1a5c5c]">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-[#0fc6c2] flex items-center justify-center text-white font-bold text-sm">
+              鲸
+            </div>
+            <span className="font-semibold text-sm">万能导入系统</span>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+
+        <nav className="flex-1 py-4 px-2 space-y-1">
+          <button
+            onClick={() => setView("import")}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors ${
+              view === "import"
+                ? "bg-[#166060] text-white"
+                : "text-gray-300 hover:bg-[#166060] hover:text-white"
+            }`}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <FileUp className="w-4 h-4" />
+            导入下单
+          </button>
+          <button
+            onClick={() => setView("orders")}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors ${
+              view === "orders"
+                ? "bg-[#166060] text-white"
+                : "text-gray-300 hover:bg-[#166060] hover:text-white"
+            }`}
           >
-            Documentation
-          </a>
+            <List className="w-4 h-4" />
+            已导入运单
+          </button>
+        </nav>
+
+        <div className="p-3 border-t border-[#1a5c5c]">
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm text-gray-300 hover:bg-[#166060] hover:text-white transition-colors"
+          >
+            <Settings className="w-4 h-4" />
+            设置
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 flex-shrink-0">
+          <h1 className="text-base font-semibold text-gray-800">
+            {view === "import" ? "导入下单" : "已导入运单"}
+          </h1>
+          <div className="flex items-center gap-2">
+            <Package className="w-5 h-5 text-[#0fc6c2]" />
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-auto p-6">
+          {view === "import" ? (
+            <ImportWorkflow apiKey={apiKey} />
+          ) : (
+            <OrderList />
+          )}
         </div>
       </main>
+
+      {/* Settings Dialog */}
+      <Dialog open={showSettings} onOpenChange={setShowSettings}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>系统设置</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">DeepSeek API Key</label>
+              <Input
+                type="password"
+                placeholder="sk-..."
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+              />
+              <p className="text-xs text-gray-500">
+                用于 AI 辅助生成解析规则，仅保存在本地浏览器中
+              </p>
+            </div>
+            <Button
+              onClick={() => setShowSettings(false)}
+              className="w-full bg-[#0fc6c2] hover:bg-[#0bada9]"
+            >
+              保存
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
