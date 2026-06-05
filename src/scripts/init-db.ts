@@ -1,6 +1,7 @@
-import { getSql } from '../lib/db'
+import { getDb, getSql } from '../lib/db'
 
 async function initDb() {
+  await getDb()
   const sql = getSql()
 
   await sql`

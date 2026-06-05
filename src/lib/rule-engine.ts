@@ -60,9 +60,9 @@ export function autoDetectRule(parsed: ParsedFile): ParseRule {
   }
 
   // Type 3: Matrix/transpose (门店×SKU style)
-  const storeHeaders = headers.filter(h => /门店|店|银泰|金桥|金银潭/.test(h))
+  const storeHeaders = headers.filter(h => /^(?!.*(编码|名称|数量|规格|备注|电话|地址|姓名|收件|收货|发货)).*(门店|店|仓库|分公司|部门)/.test(h) && !/编码|名称/.test(h))
   if (storeHeaders.length > 2) {
-    ops.push({ type: 'transpose', skuCol: '物品编码', valueCols: storeHeaders })
+    ops.push({ type: 'transpose', skuCol: headers.find(h => /物品编码|SKU编码/.test(h)) || headers[0], valueCols: storeHeaders })
   }
 
   // Type 4: Multi-sheet (already handled by parseExcel)

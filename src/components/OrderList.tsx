@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Search, RefreshCw, Package } from "lucide-react";
+import { Search, RefreshCw, Package, FileX, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -78,18 +78,18 @@ export function OrderList() {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Filters */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Input
             placeholder="外部编码"
             value={externalCode}
             onChange={(e) => setExternalCode(e.target.value)}
-            className="w-48"
+            className="w-36 md:w-48"
           />
           <Input
             placeholder="收件人姓名"
             value={receiverName}
             onChange={(e) => setReceiverName(e.target.value)}
-            className="w-48"
+            className="w-36 md:w-48"
           />
           <Button onClick={() => { setPage(1); fetchOrders(); }}>
             <Search className="w-4 h-4 mr-1" /> 查询
@@ -118,14 +118,20 @@ export function OrderList() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-gray-500">
-                    加载中...
+                  <TableCell colSpan={9} className="text-center py-12">
+                    <div className="flex flex-col items-center gap-3 text-gray-400">
+                      <Loader2 className="w-8 h-8 animate-spin text-[#0fc6c2]" />
+                      <span className="text-sm">加载中...</span>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : orders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-gray-500">
-                    暂无数据
+                  <TableCell colSpan={9} className="text-center py-12">
+                    <div className="flex flex-col items-center gap-3 text-gray-400">
+                      <FileX className="w-10 h-10" />
+                      <span className="text-sm">暂无数据</span>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (
