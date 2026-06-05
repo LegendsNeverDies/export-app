@@ -31,6 +31,7 @@ export interface ParseRule {
   fileType: 'excel' | 'word' | 'pdf'
   operations: RuleOperation[]
   fieldMappings: Record<string, string | null>
+  fieldConfidence?: Record<string, 'high' | 'medium' | 'low'>
   createdAt?: string
   updatedAt?: string
 }
