@@ -18,6 +18,7 @@ import { toast } from "sonner";
 
 interface Order {
   id: number;
+  batch_id: string;
   external_code: string;
   store_name: string;
   receiver_name: string;
@@ -35,10 +36,12 @@ export function OrderList() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const [size] = useState(10);
+  const [size, setSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [externalCode, setExternalCode] = useState("");
   const [receiverName, setReceiverName] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -48,6 +51,8 @@ export function OrderList() {
       params.set("size", String(size));
       if (externalCode) params.set("externalCode", externalCode);
       if (receiverName) params.set("receiverName", receiverName);
+      if (startDate) params.set("startDate", startDate);
+      if (endDate) params.set("endDate", endDate);
 
       const res = await fetch(`/api/orders?${params.toString()}`);
       const data = await res.json();
@@ -55,18 +60,26 @@ export function OrderList() {
         setOrders(data.data);
         setTotal(data.pagination.total);
       }
-    } catch (e) {
+    } catch {
       toast.error("加载数据失败");
     } finally {
       setLoading(false);
     }
-  }, [page, size, externalCode, receiverName]);
+  }, [page, size, externalCode, receiverName, startDate, endDate]);
 
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
 
   const totalPages = Math.ceil(total / size);
+
+  const handleReset = () => {
+    setExternalCode("");
+    setReceiverName("");
+    setStartDate("");
+    setEndDate("");
+    setPage(1);
+  };
 
   return (
     <Card>
@@ -78,23 +91,47 @@ export function OrderList() {
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Filters */}
-        <div className="flex gap-2 flex-wrap">
-          <Input
-            placeholder="外部编码"
-            value={externalCode}
-            onChange={(e) => setExternalCode(e.target.value)}
-            className="w-36 md:w-48"
-          />
-          <Input
-            placeholder="收件人姓名"
-            value={receiverName}
-            onChange={(e) => setReceiverName(e.target.value)}
-            className="w-36 md:w-48"
-          />
+        <div className="flex gap-2 flex-wrap items-end">
+          <div className="space-y-1">
+            <label className="text-xs text-gray-500">外部编码</label>
+            <Input
+              placeholder="外部编码"
+              value={externalCode}
+              onChange={(e) => setExternalCode(e.target.value)}
+              className="w-36 md:w-48"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-gray-500">收件人</label>
+            <Input
+              placeholder="收件人姓名"
+              value={receiverName}
+              onChange={(e) => setReceiverName(e.target.value)}
+              className="w-36 md:w-48"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-gray-500">开始日期</label>
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-36"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-gray-500">结束日期</label>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-36"
+            />
+          </div>
           <Button onClick={() => { setPage(1); fetchOrders(); }}>
             <Search className="w-4 h-4 mr-1" /> 查询
           </Button>
-          <Button variant="outline" onClick={() => { setExternalCode(""); setReceiverName(""); setPage(1); }}>
+          <Button variant="outline" onClick={handleReset}>
             <RefreshCw className="w-4 h-4 mr-1" /> 重置
           </Button>
         </div>
@@ -155,9 +192,20 @@ export function OrderList() {
 
         {/* Pagination */}
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-500">
-            共 {total} 条，第 {page} / {totalPages || 1} 页
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">
+              共 {total} 条，第 {page} / {totalPages || 1} 页
+            </span>
+            <select
+              value={size}
+              onChange={(e) => { setSize(Number(e.target.value)); setPage(1); }}
+              className="text-sm border rounded px-1 py-0.5"
+            >
+              <option value="10">10条/页</option>
+              <option value="20">20条/页</option>
+              <option value="50">50条/页</option>
+            </select>
+          </div>
           <div className="flex gap-1">
             <Button
               variant="outline"

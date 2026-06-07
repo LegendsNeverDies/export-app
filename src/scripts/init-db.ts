@@ -1,8 +1,7 @@
-import { getDb, getSql } from '../lib/db'
+import { getSql } from '../lib/db'
 
 async function initDb() {
-  await getDb()
-  const sql = getSql()
+  const sql = await getSql()
 
   await sql`
     CREATE TABLE IF NOT EXISTS orders (

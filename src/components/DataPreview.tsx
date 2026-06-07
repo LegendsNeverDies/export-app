@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { AlertCircle, ChevronDown, ChevronRight, Pencil, Search, FileX } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AlertCircle, ChevronDown, ChevronRight, Pencil, Search, FileX, Trash2, Plus } from "lucide-react";
 import { OrderItem } from "@/lib/types";
 
 interface DataPreviewProps {
@@ -27,9 +28,8 @@ const COLUMNS = [
   { key: "remark", label: "备注", width: 112 },
 ] as const;
 
-const COL_TOTAL_WIDTH = COLUMNS.reduce((s, c) => s + c.width, 0) + 44 + 32; // +44 for actions col + 32 for checkbox
+const COL_TOTAL_WIDTH = COLUMNS.reduce((s, c) => s + c.width, 0) + 44 + 32;
 
-/** Flatten grouped items into a virtual row list */
 interface VRow {
   type: 'group' | 'data';
   key: string;
@@ -62,7 +62,6 @@ export function DataPreview({ items, onItemsChange }: DataPreviewProps) {
     );
   }, [items, filterText]);
 
-  // Build flat virtual row list
   const vRows = useMemo((): VRow[] => {
     const rows: VRow[] = [];
     let currentGroupKey = "";
@@ -163,6 +162,26 @@ export function DataPreview({ items, onItemsChange }: DataPreviewProps) {
     setCollapsedGroups(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }, []);
 
+  // 删除选中行
+  const handleDeleteSelected = useCallback(() => {
+    if (!onItemsChange || selectedRows.size === 0) return;
+    const newItems = items.filter((_, idx) => !selectedRows.has(idx));
+    onItemsChange(newItems);
+    setSelectedRows(new Set());
+  }, [items, selectedRows, onItemsChange]);
+
+  // 新增空行
+  const handleAddRow = useCallback(() => {
+    if (!onItemsChange) return;
+    const newRow: OrderItem = {
+      id: `row-${items.length}`,
+      skuCode: '',
+      skuName: '',
+      skuQuantity: 0,
+    };
+    onItemsChange([...items, newRow]);
+  }, [items, onItemsChange]);
+
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3">
@@ -175,7 +194,7 @@ export function DataPreview({ items, onItemsChange }: DataPreviewProps) {
   return (
     <div className="space-y-3">
       {/* Toolbar */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <Input placeholder="搜索 SKU、门店、收件人..." value={filterText}
@@ -184,6 +203,18 @@ export function DataPreview({ items, onItemsChange }: DataPreviewProps) {
         <span className="text-sm text-gray-500">
           {filteredItems.length} 条数据 / 已选 {selectedRows.size} 行
         </span>
+        {onItemsChange && (
+          <>
+            <Button variant="outline" size="sm" onClick={handleAddRow}>
+              <Plus className="w-3 h-3 mr-1" /> 新增行
+            </Button>
+            {selectedRows.size > 0 && (
+              <Button variant="outline" size="sm" onClick={handleDeleteSelected} className="text-red-600 hover:text-red-700">
+                <Trash2 className="w-3 h-3 mr-1" /> 删除选中({selectedRows.size})
+              </Button>
+            )}
+          </>
+        )}
       </div>
 
       {/* Virtual Table */}
@@ -207,7 +238,6 @@ export function DataPreview({ items, onItemsChange }: DataPreviewProps) {
               const row = vRows[vRow.index];
               if (!row) return null;
 
-              // Group header row
               if (row.type === 'group') {
                 return (
                   <div key={row.key} style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vRow.start}px)` }}
@@ -223,7 +253,6 @@ export function DataPreview({ items, onItemsChange }: DataPreviewProps) {
                 );
               }
 
-              // Data row
               const item = row.item!;
               const gi = row.globalIdx!;
               const hasErrors = item._errors && Object.keys(item._errors).length > 0;
@@ -264,6 +293,9 @@ export function DataPreview({ items, onItemsChange }: DataPreviewProps) {
                             {Object.entries(item._errors || {}).map(([field, msg]) => (
                               <p key={field} className="text-red-600">{String(msg)}</p>
                             ))}
+                            {item._duplicateWith && item._duplicateWith.length > 0 && (
+                              <p className="text-orange-600">与第 {item._duplicateWith.map(i => i + 1).join(', ')} 行重复</p>
+                            )}
                           </div>
                         </TooltipContent>
                       </Tooltip>

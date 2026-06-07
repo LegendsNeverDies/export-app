@@ -1,5 +1,4 @@
-// Database connection placeholder
-// Configure your actual database connection here (Neon PostgreSQL, etc.)
+// Database connection (Neon PostgreSQL Serverless)
 // The user will set DATABASE_URL in environment variables
 
 let _sql: any = null
@@ -17,9 +16,9 @@ async function getDb() {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function getSql(): any {
+export async function getSql(): Promise<any> {
   if (!_sql) {
-    throw new Error('Database not initialized. Call getDb() first in API routes.')
+    await getDb()
   }
   return _sql
 }

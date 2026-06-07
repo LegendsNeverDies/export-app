@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  serverExternalPackages: ['pdfjs-dist', 'pdf-parse'],
+  turbopack: {},
 };
 
 export default nextConfig;

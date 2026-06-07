@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Package, List, Settings, FileUp, Menu, X } from "lucide-react";
+import { Package, List, FileUp, Menu, X, Settings } from "lucide-react";
 import { ImportWorkflow } from "@/components/ImportWorkflow";
 import { OrderList } from "@/components/OrderList";
 import { Button } from "@/components/ui/button";
