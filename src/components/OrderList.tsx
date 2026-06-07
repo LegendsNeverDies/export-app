@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { toast } from "sonner";
+import { toast, nextToastId } from "@/lib/toast-utils";
 
 interface Order {
   id: number;
@@ -61,7 +61,7 @@ export function OrderList() {
         setTotal(data.pagination.total);
       }
     } catch {
-      toast.error("加载数据失败");
+      toast.error("加载数据失败", { id: nextToastId() });
     } finally {
       setLoading(false);
     }

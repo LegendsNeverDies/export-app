@@ -21,6 +21,25 @@ export function applyRule(
   rule: ParseRule,
   allParsedSheets?: { rows: RawRow[]; headers: string[]; name: string; allRows?: unknown[][] }[]
 ): { orders: OrderGroup[]; items: OrderItem[] } {
+  // Step 0: 多Sheet逐Sheet尾部提取（收集各Sheet的提取值，暂不注入行）
+  const multiSheetOp = rule.operations.find(
+    (op): op is import('./types').MultiSheetOp => op.type === 'multiSheet'
+  )
+  const sheetExtractedValues: Record<string, unknown>[] = []
+  let perSheetProcessed = false
+
+  if (multiSheetOp?.perSheetTailExtract && allParsedSheets && allParsedSheets.length > 1) {
+    perSheetProcessed = true
+    for (let si = 0; si < allParsedSheets.length; si++) {
+      const sheet = allParsedSheets[si]
+      const extracted = applyTailExtract(sheet.rows, {
+        type: 'tailExtract',
+        rules: multiSheetOp.perSheetTailExtract,
+      }, [sheet])
+      sheetExtractedValues.push(extracted)
+    }
+  }
+
   // Step 1: 数据区域裁剪
   let data = applyDataRegion(allSheetsRows, rule.dataRegion)
   let currentHeaders = [...headers]
@@ -30,6 +49,9 @@ export function applyRule(
 
   // Step 2: 依次执行操作管道
   for (const op of rule.operations) {
+    if (op.type === 'multiSheet') {
+      continue
+    }
     if (op.type === 'headerRow') {
       if (!preSliceData) preSliceData = [...data]
       const result = applyHeaderRow(data, currentHeaders, op, allParsedSheets)
@@ -50,6 +72,38 @@ export function applyRule(
     }
   }
 
+  // Step 2.5: 将逐Sheet提取的值注入到各行（基于 _sheetIndex）
+  if (sheetExtractedValues.length > 0) {
+    // 先过滤尾部信息行：第一列值以 perSheetTailExtract 中 marker 开头的行
+    const skipMarkers = multiSheetOp!.perSheetTailExtract!.map(r => r.marker)
+    data = data.filter(row => {
+      // 过滤空行
+      const hasData = Object.entries(row).some(([k, v]) =>
+        !k.startsWith('_') && v !== null && v !== undefined && String(v).trim() !== ''
+      )
+      if (!hasData) return false
+      // 过滤尾部信息行：第一列匹配任一 marker
+      const firstColVal = Object.values(row).find(
+        v => v !== null && v !== undefined && String(v).trim() !== '' && !String(v).startsWith('_') && isNaN(Number(v))
+      )
+      if (firstColVal) {
+        for (const m of skipMarkers) {
+          if (String(firstColVal).startsWith(m)) return false
+        }
+      }
+      return true
+    })
+
+    // 注入逐Sheet提取的收件人信息
+    data = data.map(row => {
+      const si = (row._sheetIndex as number) ?? 0
+      if (si < sheetExtractedValues.length && sheetExtractedValues[si]) {
+        return { ...sheetExtractedValues[si], ...row }
+      }
+      return row
+    })
+  }
+
   // Step 3: 字段映射 + 校验
   const items = mapToOrderItems(data, rule.fieldMappings)
 
@@ -67,47 +121,55 @@ function applyHeaderRow(
   op: import('./types').HeaderRowOp,
   allParsedSheets?: { rows: RawRow[]; headers: string[]; name: string; allRows?: unknown[][] }[]
 ): { rows: RawRow[]; headers: string[] } {
-  const allRows = allParsedSheets?.[0]?.allRows
-  if (allRows && allRows.length > op.rowIndex) {
-    const newHeaderRow = allRows[op.rowIndex]
-    let newHeaders = newHeaderRow
-      ? (newHeaderRow as unknown[]).map(h => String(h ?? '').trim()).filter(h => h !== '')
-      : currentHeaders
+  // 优先使用 raw 2D 数据重建行（支持多Sheet）
+  if (allParsedSheets && allParsedSheets.length > 0 && allParsedSheets[0]?.allRows) {
+    // 使用第一个Sheet的表头行作为列名（假设所有Sheet结构相同）
+    const firstSheetAllRows = allParsedSheets[0].allRows!
+    if (firstSheetAllRows.length > op.rowIndex) {
+      const newHeaderRow = firstSheetAllRows[op.rowIndex]
+      let newHeaders = newHeaderRow
+        ? (newHeaderRow as unknown[]).map(h => String(h ?? '').trim()).filter(h => h !== '')
+        : currentHeaders
 
-    const dataStartRow = op.rowIndex + 1
+      const dataStartRow = op.rowIndex + 1
 
-    // 列对齐检测：比较表头列数和第一行数据的列数
-    // 如果第一列是序号（纯数字），但表头没有对应的列名，则前插一个包装头
-    const firstDataRow = allRows[dataStartRow] as unknown[] | undefined
-    if (firstDataRow && firstDataRow.length === newHeaders.length) {
-      const firstHeaderVal = newHeaders[0] || ''
-      const firstDataVal = String(firstDataRow[0] ?? '').trim()
-      // 第一列表头不是数字相关列名，但第一行数据是纯数字 → 序号偏离
-      const isSequenceCol =
-        /^\d+$/.test(firstDataVal) &&
-        !/序|编|码|号|排|行|ID|id/i.test(firstHeaderVal) &&
-        firstDataVal.length <= 4
+      // 列对齐检测：使用第一个Sheet的第一行数据
+      const firstDataRow = firstSheetAllRows[dataStartRow] as unknown[] | undefined
+      if (firstDataRow && firstDataRow.length === newHeaders.length) {
+        const firstHeaderVal = newHeaders[0] || ''
+        const firstDataVal = String(firstDataRow[0] ?? '').trim()
+        const isSequenceCol =
+          /^\d+$/.test(firstDataVal) &&
+          !/序|编|码|号|排|行|ID|id/i.test(firstHeaderVal) &&
+          firstDataVal.length <= 4
 
-      if (isSequenceCol) {
-        // 表头少了一列（序号列），在头部插入默认列名
-        newHeaders = ['序号', ...newHeaders]
-      }
-    }
-
-    const newRows: RawRow[] = []
-    for (let i = dataStartRow; i < allRows.length; i++) {
-      const rawRow = allRows[i] as unknown[]
-      if (!rawRow) continue
-      const obj: RawRow = { _rowIndex: i - dataStartRow }
-      for (let colIdx = 0; colIdx < rawRow.length && colIdx < newHeaders.length; colIdx++) {
-        const h = newHeaders[colIdx]
-        if (h && rawRow[colIdx] !== null && rawRow[colIdx] !== undefined && String(rawRow[colIdx]).trim() !== '') {
-          obj[h] = rawRow[colIdx]
+        if (isSequenceCol) {
+          newHeaders = ['序号', ...newHeaders]
         }
       }
-      newRows.push(obj)
+
+      // 遍历所有Sheet的 raw 2D 数据，逐Sheet重建行
+      const allNewRows: RawRow[] = []
+      for (let si = 0; si < allParsedSheets.length; si++) {
+        const sheetAllRows = allParsedSheets[si]?.allRows
+        if (!sheetAllRows || sheetAllRows.length <= op.rowIndex) continue
+
+        for (let i = dataStartRow; i < sheetAllRows.length; i++) {
+          const rawRow = sheetAllRows[i] as unknown[]
+          if (!rawRow) continue
+          const obj: RawRow = { _rowIndex: i - dataStartRow, _sheetIndex: si }
+          for (let colIdx = 0; colIdx < rawRow.length && colIdx < newHeaders.length; colIdx++) {
+            const h = newHeaders[colIdx]
+            if (h && rawRow[colIdx] !== null && rawRow[colIdx] !== undefined && String(rawRow[colIdx]).trim() !== '') {
+              obj[h] = rawRow[colIdx]
+            }
+          }
+          allNewRows.push(obj)
+        }
+      }
+      return { rows: allNewRows, headers: newHeaders }
     }
-    return { rows: newRows, headers: newHeaders }
+    // fall through to object-format path if first sheet doesn't have enough rows
   }
 
   if (op.rowIndex < rows.length) {
@@ -169,13 +231,16 @@ function applyOperation(
     case 'skipTotalRows': {
       const regex = new RegExp((op.patterns || ['合计', '总计', 'total', '小计']).join('|'), 'i')
       return rows.filter(r => {
-        const firstVal = String(Object.values(r).find(v => v !== null && v !== undefined && String(v).trim() !== '') || '')
+        const firstVal = String(Object.values(r).find(v =>
+          v !== null && v !== undefined && String(v).trim() !== '' &&
+          !String(v).startsWith('_') && isNaN(Number(v))
+        ) || '')
         return !regex.test(firstVal)
       })
     }
     case 'aggregateBy': return applyAggregateBy(rows, op)
     case 'transpose': return applyTranspose(rows, op)
-    case 'multiSheet': return rows
+    case 'multiSheet': return rows // handled in Step 0 of applyRule
     case 'cardBoundary': return applyCardBoundary(rows, op)
     case 'compositeCell': return applyCompositeCell(rows, op)
     case 'regexExtract': return applyRegexExtract(rows, op)
@@ -339,7 +404,7 @@ function applyTailExtract(
       const idx = searchText.indexOf(rule.marker)
       if (idx >= 0) {
         const after = searchText.substring(idx + rule.marker.length)
-        const val = after.match(/^([^\s\n]+)/)?.[1] || after.substring(0, 200).trim()
+        const val = after.match(/^\s*([^\s\n]+)/)?.[1] || after.substring(0, 200).trim()
         extractedValues[rule.targetField] = val
       }
     }
@@ -375,7 +440,7 @@ function applyHeaderExtract(
       if (idx >= 0) {
         const after = searchText.substring(idx + rule.marker.length)
         // 取下一个空格或换行前的文本
-        const val = after.match(/^([^\s\n]+)/)?.[1] || after.substring(0, 100).trim()
+        const val = after.match(/^\s*([^\s\n]+)/)?.[1] || after.substring(0, 100).trim()
         extractedValues[rule.targetField] = val
       }
     }
@@ -486,6 +551,7 @@ function mapToOrderItems(rows: RawRow[], mappings: Record<string, string | null>
       skuSpec: safeStr(getValue('skuSpec')) || undefined,
       remark: safeStr(getValue('remark')) || undefined,
       _rowIndex: (row._rowIndex as number) ?? idx,
+      _sheetIndex: (row._sheetIndex as number),
     }
   })
 }
@@ -495,7 +561,17 @@ function mapToOrderItems(rows: RawRow[], mappings: Record<string, string | null>
 function groupIntoOrders(items: OrderItem[]): OrderGroup[] {
   const groups: Record<string, OrderGroup> = {}
   items.forEach(item => {
-    const key = item.externalCode || item.storeName || `ungrouped-${item._rowIndex}`
+    // 分组键：externalCode + storeName + receiverName + receiverPhone
+    // 不同收件人信息会产生不同出库单
+    const keyParts = [
+      item.externalCode || '',
+      item.storeName || '',
+      item.receiverName || '',
+      item.receiverPhone || '',
+    ].filter(Boolean)
+    const key = keyParts.length > 0
+      ? keyParts.join('|')
+      : `ungrouped-${item._rowIndex}`
     if (!groups[key]) {
       groups[key] = { externalCode: item.externalCode, storeName: item.storeName, receiverName: item.receiverName, receiverPhone: item.receiverPhone, receiverAddress: item.receiverAddress, remark: item.remark, items: [] }
     }

@@ -25,6 +25,7 @@ export interface OrderItem {
   skuSpec?: string
   remark?: string
   _rowIndex?: number
+  _sheetIndex?: number
   _errors?: Record<string, string>
   _duplicateWith?: number[]
 }

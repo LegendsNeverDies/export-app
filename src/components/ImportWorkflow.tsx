@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "sonner";
+import { toast, nextToastId } from "@/lib/toast-utils";
 import { applyRule, validateOrderItems } from "@/lib/rule-engine";
 import { ParseRule, OrderItem, ParsedFile, RawRow, STANDARD_FIELDS } from "@/lib/types";
 import { DataPreview } from "./DataPreview";
@@ -107,9 +107,9 @@ export function ImportWorkflow({ apiKey }: ImportWorkflowProps) {
       setCurrentSheet(0);
       setStep("rule");
       await loadRules();
-      toast.success(`成功解析文件，共 ${data.data.length} 个Sheet`);
+      toast.success(`成功解析文件，共 ${data.data.length} 个Sheet`, { id: nextToastId() });
     } catch (err: any) {
-      toast.error(err.message || "文件解析失败");
+      toast.error(err.message || "文件解析失败", { id: nextToastId() });
     } finally {
       setTimeout(() => setIsParsing(false), 300);
     }
@@ -123,7 +123,7 @@ export function ImportWorkflow({ apiKey }: ImportWorkflowProps) {
 
   const handleAIAnalyze = async () => {
     if (!apiKey) {
-      toast.error("请先在设置中配置 DeepSeek API Key");
+      toast.error("请先在设置中配置 DeepSeek API Key", { id: nextToastId() });
       return;
     }
 
@@ -139,6 +139,13 @@ export function ImportWorkflow({ apiKey }: ImportWorkflowProps) {
       const rawAllRows = (currentSheetData as any).parsedSheet?.allRows ||
         parsedData[currentSheet]?.parsedSheets?.[0]?.allRows;
 
+      // 多Sheet文件：收集所有Sheet的原始数据
+      const isMultiSheet = parsedData.length > 1;
+      const rawAllSheets = isMultiSheet ? parsedData.map(p => ({
+        name: (p.rawData as any)?.sheetName || p.parsedSheets?.[0]?.name || 'Sheet',
+        allRows: p.parsedSheets?.[0]?.allRows || [],
+      })).filter(s => s.allRows.length > 0) : undefined;
+
       const res = await fetch("/api/ai/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -152,6 +159,7 @@ export function ImportWorkflow({ apiKey }: ImportWorkflowProps) {
           totalRows: allRows.length,
           pdfFullText: (currentSheetData as any).parsedPdf?.fullText,
           rawAllRows,
+          rawAllSheets,
           apiKey,
         }),
       });
@@ -162,16 +170,17 @@ export function ImportWorkflow({ apiKey }: ImportWorkflowProps) {
         const lowConfFields = Object.entries(data.data.rule.fieldConfidence || {}).filter(([, v]: any) => v === "low").map(([k]) => k);
         if (lowConfFields.length > 0) {
           toast.success("AI 分析完成", {
+            id: nextToastId(),
             description: `${lowConfFields.length} 个字段为低置信度推测，请重点检查`,
           });
         } else {
-          toast.success("AI 分析完成，请检查规则配置");
+          toast.success("AI 分析完成，请检查规则配置", { id: nextToastId() });
         }
       } else {
-        toast.error(data.message || "AI 分析失败");
+        toast.error(data.message || "AI 分析失败", { id: nextToastId() });
       }
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message, { id: nextToastId() });
     } finally {
       setIsAnalyzing(false);
     }
@@ -199,9 +208,9 @@ export function ImportWorkflow({ apiKey }: ImportWorkflowProps) {
       const result = applyRule(allRows, currentSheetData.headers, currentRule, allParsedSheets);
       setOrderItems(result.items);
       setStep("preview");
-      toast.success(`解析完成，共 ${result.items.length} 条数据`);
+      toast.success(`解析完成，共 ${result.items.length} 条数据`, { id: nextToastId() });
     } catch (err: any) {
-      toast.error(err.message || "解析失败");
+      toast.error(err.message || "解析失败", { id: nextToastId() });
     }
   };
 
@@ -223,21 +232,21 @@ export function ImportWorkflow({ apiKey }: ImportWorkflowProps) {
       });
       const data = await res.json();
       if (data.success) {
-        toast.success("规则保存成功");
+        toast.success("规则保存成功", { id: nextToastId() });
         setShowRuleDialog(false);
         await loadRules();
       } else {
-        toast.error(data.message);
+        toast.error(data.message, { id: nextToastId() });
       }
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message, { id: nextToastId() });
     }
   };
 
   const handleSubmit = async () => {
     const validItems = orderItems.filter(item => !item._errors || Object.keys(item._errors).length === 0);
     if (validItems.length === 0) {
-      toast.error("没有可提交的数据，请先修正错误");
+      toast.error("没有可提交的数据，请先修正错误", { id: nextToastId() });
       return;
     }
 
@@ -271,9 +280,9 @@ export function ImportWorkflow({ apiKey }: ImportWorkflowProps) {
       }
 
       if (totalFailed === 0) {
-        toast.success(`成功导入 ${totalImported} 条数据`);
+        toast.success(`成功导入 ${totalImported} 条数据`, { id: nextToastId() });
       } else {
-        toast.success(`导入完成：${totalImported} 条成功，${totalFailed} 条失败`);
+        toast.success(`导入完成：${totalImported} 条成功，${totalFailed} 条失败`, { id: nextToastId() });
       }
 
       setStep("upload");
@@ -281,7 +290,7 @@ export function ImportWorkflow({ apiKey }: ImportWorkflowProps) {
       setParsedData([]);
       setOrderItems([]);
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message, { id: nextToastId() });
     } finally {
       setIsSubmitting(false);
     }

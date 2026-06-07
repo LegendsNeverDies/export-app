@@ -15,6 +15,8 @@ export async function analyzeFileWithAI(params: {
   pdfFullText?: string
   /** 原始 2D 数组数据（优先使用，让 AI 看到真实行结构） */
   rawAllRows?: unknown[][]
+  /** 多Sheet文件的原始数据（按Sheet分组） */
+  rawAllSheets?: Array<{ name: string; allRows: unknown[][] }>
   /** DeepSeek API Key（由前端页面配置传入） */
   apiKey: string
 }): Promise<{ rule: ParseRule; explanation: string }> {
@@ -123,6 +125,43 @@ function buildSystemPrompt(): string {
 2. 识别数据区域（表头行之后到合计/尾部信息之前的行）
 3. 识别文件头部和尾部的散落信息（如收货人、单据号等）
 
+## 预置规则参考
+以下是常见文件格式的参考规则，你可以在生成规则时借鉴这些模式：
+
+【配送发货单（42列标准格式）】
+- 特征：标题含"配送发货单"，表头在第4行（0-based索引3），42列
+- 表头行典型列名：序号、物品分类、物品编码、物品名称、规格型号、订货单位、发货数量、发货仓库
+- 布局：Row1=标题，Row2=机构信息（收货/供货/订货机构），Row3=状态信息，Row4=表头，Row5+=数据
+- 收货人信息在文件尾部，需要用 tailExtract 提取
+- 操作：skipRows(4) → filterEmptyRows → skipTotalRows(['合计'])
+
+【多门店分Sheet出库单】
+- 特征：每个Sheet对应一个门店，Sheet名=门店名
+- 底部包含收货人信息（收货门店、联系人、联系电话、收货地址）
+- 必须使用 multiSheet + perSheetTailExtract
+- 表头在第4行（0-based索引3）
+
+【库存查询单】
+- 特征：标题含"查询结果"，含多门店分货列（门店名为列维度）
+- 无合计行，数据直接跟表头
+- 可能含公式列（如"下单后结余"）
+
+【汇总单发货明细】
+- 特征：含"汇总单发货明细"，32列，含物品行号
+- 必填字段带*标记（如"配送单号*"）
+- 支持多批次拆行
+
+【门店调拨单（卡片式）】
+- 特征：含"调拨记录 #N"标识，卡片式布局
+- 每个卡片包含：调入门店、收货人、电话、收货地址 + 物品列表
+- 使用 cardBoundary 识别卡片边界
+
+【配送发货单（PDF）】
+- 特征：PDF格式，含分页信息"第N页 / 共M页"
+- 基本信息在开头，物品表头在中上部
+- 合计行和收货人信息在最后一页
+- 使用 headerExtract 提取开头信息
+
 ## 可用操作类型（operations 数组中的元素）
 
 1. skipRows: { type: "skipRows", count: number } — 跳过前 N 行
@@ -182,7 +221,23 @@ function buildSystemPrompt(): string {
 6. 如果同一配送单号下有多行SKU，使用 aggregateBy 填充缺失字段
 7. 如果是多 Sheet 文件，使用 multiSheet
 8. 每个字段映射必须标注置信度
-9. 只返回 JSON，不要包含其他解释文字`
+9. 只返回 JSON，不要包含其他解释文字
+
+## 多Sheet文件处理规则（重要）
+1. 如果文件包含多个Sheet，每个Sheet通常是独立的出库单/门店
+2. 每个Sheet底部通常包含该Sheet独有的收货人信息（收货人姓名、电话、地址）
+3. 多Sheet文件必须使用 multiSheet + perSheetTailExtract 组合：
+   - operations 中第一项应为：
+     { "type": "multiSheet", "perSheetTailExtract": [
+       { "marker": "收货人：", "targetField": "receiverName" },
+       { "marker": "电话：", "targetField": "receiverPhone" },
+       { "marker": "地址：", "targetField": "receiverAddress" }
+     ]}
+   - perSheetTailExtract 内的 rules 结构与 tailExtract 完全相同
+   - 不要同时使用 multiSheet 和单独的 tailExtract 操作
+4. 每个Sheet的数据区结构相同时，headerRow 等操作在 multiSheet 之后统一处理
+5. 不要将收货人信息映射为 fieldMappings 的源列名（因为它们在尾部不在数据列中）
+6. 注意区分"多Sheet共享尾部信息"和"每Sheet独立尾部信息"——多门店出库单通常是后者`
 }
 
 /**
@@ -199,6 +254,7 @@ function buildUserPrompt(params: {
   totalRows?: number
   pdfFullText?: string
   rawAllRows?: unknown[][]
+  rawAllSheets?: Array<{ name: string; allRows: unknown[][] }>
 }): string {
   const parts: string[] = []
 
@@ -211,8 +267,50 @@ function buildUserPrompt(params: {
 
   if (params.pdfFullText) {
     parts.push(`\n## PDF 全文内容\n${params.pdfFullText.substring(0, 3000)}`)
+  } else if (params.rawAllSheets && params.rawAllSheets.length > 1) {
+    // 多Sheet文件：对每个Sheet独立展示头部和尾部数据
+    const maxSheetsToShow = Math.min(params.rawAllSheets.length, 4)
+    parts.push(`\n## 多Sheet文件结构（共 ${params.rawAllSheets.length} 个Sheet，以下展示前 ${maxSheetsToShow} 个）`)
+    parts.push(`每个Sheet是一个独立的出库单，底部包含该Sheet的收货人信息。\n`)
+
+    for (let si = 0; si < maxSheetsToShow; si++) {
+      const sheet = params.rawAllSheets[si]
+      const { name, allRows } = sheet
+      const maxCols = 15
+      const headCount = Math.min(allRows.length, 8)
+      const tailCount = Math.min(allRows.length, 5)
+
+      parts.push(`\n### ${name}`)
+      // 头部行
+      parts.push(`(前${headCount}行)`)
+      for (let i = 0; i < headCount; i++) {
+        const row = allRows[i]
+        if (!row) continue
+        const trimmed = row.slice(0, maxCols).map((v: unknown) =>
+          v === null || v === undefined ? '' : String(v).trim()
+        )
+        if (trimmed.some(v => v !== '')) {
+          parts.push(`  [${i}] ${JSON.stringify(trimmed)}`)
+        }
+      }
+      // 尾部行（不同Sheet尾部收件人信息不同，很重要）
+      if (allRows.length > headCount) {
+        parts.push(`(尾部${tailCount}行 - 包含收货人信息)`)
+        const tailStart = Math.max(headCount, allRows.length - tailCount)
+        for (let i = tailStart; i < allRows.length; i++) {
+          const row = allRows[i]
+          if (!row) continue
+          const trimmed = row.slice(0, maxCols).map((v: unknown) =>
+            v === null || v === undefined ? '' : String(v).trim()
+          )
+          if (trimmed.some(v => v !== '')) {
+            parts.push(`  [${i}] ${JSON.stringify(trimmed)}`)
+          }
+        }
+      }
+    }
   } else if (params.rawAllRows && params.rawAllRows.length > 0) {
-    // 使用原始 2D 数组展示
+    // 使用原始 2D 数组展示（单Sheet）
     const maxCols = 20
     const allRows = params.rawAllRows
 

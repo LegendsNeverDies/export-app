@@ -49,7 +49,7 @@ export function DataPreview({ items, onItemsChange }: DataPreviewProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const groupKey = (item: OrderItem) => item.externalCode || item.storeName || `row-${item._rowIndex}`;
+  const groupKey = (item: OrderItem) => item.externalCode || item.storeName || `s${item._sheetIndex ?? 0}-r${item._rowIndex}`;
 
   const filteredItems = useMemo(() => {
     if (!filterText) return items;
